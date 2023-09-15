@@ -260,7 +260,9 @@ class Bill_App(Database):
 
             lbl_title=Label(self.root,text="BILLING SOFTWARE",font=("times new roman",38,"bold"),bg="white",fg="red") #where we want to make label we use = root
             lbl_title.place(x=0,y=130,width=1530,height=45)
-
+            
+            self.BtnSearch=Button(self.root,command=self.find_bill,text="Admin Login",font=("arial",10,"bold"),bg="lightgrey",fg="black",width=13,cursor="hand2")
+            self.BtnSearch.place(x=1220,y=130,width=130,height=45)
             
             Main_Frame=Frame(self.root,bd=5,relief=GROOVE,bg="white")   #bd=Border,relief=border style
             Main_Frame.place(x=0,y=175,width=1530,height=630)           #to underline text
@@ -849,9 +851,11 @@ class LoginApp(Database):
                   messagebox.showerror("No Data","Plese enter the data.")
                   
 if __name__=='__main__':
-    login_app = Tk()
-    LoginApp(login_app)
-    login_app.mainloop()        
+      root  = Tk()
+      Bill_App(root)
+      root.mainloop()
+      # LoginApp(login_app)
+       
                 
 
  
