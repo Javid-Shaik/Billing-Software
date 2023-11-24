@@ -1,16 +1,15 @@
 	 Welcome To Our Store
- Bill Number: 7114
- Customer Name: 
- Phone Number: 
- Email: 
+ Bill Number: 2824
+ Customer Name: javid
+ Phone Number: 9346546478
+ Email: javdk322@gmai.com
 ===================================
  Products		QTY		Price
 ===================================
 
- woodland		1		1350.0
- zara		1		1278.25
+ Redmi c12		2		17600.0
 =================================
- Sub Amount:			RS.2628.25
- Tax Amount:			RS.26.28
- Total Amount:			RS.2654.53
+ Sub Amount:			RS.17600.00
+ Tax Amount:			RS.176.00
+ Total Amount:			RS.17776.00
 ================================

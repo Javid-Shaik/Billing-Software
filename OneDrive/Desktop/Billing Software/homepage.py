@@ -1,7 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-
+from main import LoginApp 
+ 
 class HomePage:
     
     def __init__(self, root):
@@ -23,8 +24,8 @@ class HomePage:
         # Create buttons with different colors on the canvas
         button_styles = {
             "About": {"text": "About", "background": "green"},
-            "Login": {"text": "Login", "bg": "blue"},
-            "Admin": {"text": "Admin", "bg": "blue"}
+            "Admin": {"text": "Admin", "bg": "blue"},
+            "Login": {"text": "Login", "bg": "blue"}
         }
 
         # Y-coordinate to position buttons
@@ -32,10 +33,10 @@ class HomePage:
             if page_name == "About":
                 x_coordinate = 1270  # Move the "About" button to the left side
                 y_coordinate = 60
-            elif page_name == "Login":
+            elif page_name == "Admin":
                 x_coordinate = self.root.winfo_screenwidth() - 200  # Move the "Login" button to the right side
                 y_coordinate = 60
-            elif page_name == "Admin":
+            elif page_name == "Login":
                 x_coordinate = self.root.winfo_screenwidth() - 945  # Move the "Admin" button to the right side
                 y_coordinate = 390
             else:
@@ -65,12 +66,12 @@ class HomePage:
 
     def open_page(self, name):
         home.exit_home_screen()
-        new_page = ttk.Frame()
+        root = tk.Tk()
         if name == "Admin":
-            label = tk.Label(new_page, text="This is the Admin page.")
-            label.pack()
-            self.root.mainloop()
-            
+            LoginApp(root)
+        elif name == "Login":
+            LoginApp(root).open_billing_app()
+            pass
             
     def run(self):
         self.root.mainloop()

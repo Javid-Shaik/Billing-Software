@@ -1,14 +1,22 @@
-from datetime import date
-import os
+from datetime import date , datetime
+import os , re
 import sqlite3
 from tkinter import *
 from tkinter import ttk
 from PIL import Image,ImageTk #pip install pillow
 import random
 from tkinter import messagebox
+import numpy as np
+import pandas as pd
+from sklearn.decomposition import TruncatedSVD
 import win32print
 import win32api
 from tkinter import filedialog
+# import pandas as pd
+# import tensorflow as tf
+# import numpy as np
+# import sklearn
+# from sklearn.decomposition import TruncatedSVD
 
 class Database :
       
@@ -50,11 +58,18 @@ class Database :
             self.conn.commit() 
       
       def product_values(self,category, sub_cat , product , price , qty):
-            query = f'''
-            INSERT INTO products(category , sub_category , product, price , quantity ) 
-            VALUES('{category}' , '{sub_cat}' ,'{product}' , {price}, {qty})'''
-            self.crsr.execute(query)
-            self.conn.commit()  
+            query = '''
+            INSERT INTO products (category, sub_category, product_name, price, quantity)
+            VALUES (?, ?, ?, ?, ?)
+            '''
+            values = (category, sub_cat, product, price, qty)
+            
+            try:
+                  self.crsr.execute(query, values)
+                  self.conn.commit()
+                  messagebox.showinfo("Success", "Product Added Successfully")
+            except sqlite3.Error as e:
+                  messagebox.showerror("Error", f"Error adding product: {str(e)}") 
       
       def billtable(self):
             bill_table = '''
@@ -63,14 +78,15 @@ class Database :
                         customer_id INTEGER,
                         bill_date DATE,
                         total_amount DECIMAL(10, 2),
+                        invoice_number varchar(20) UNIQUE,
                         FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
                         )'''
             self.crsr.execute(bill_table)
             self.conn.commit()
       
-      def bill_values(self, c_id , bill_date,  total_bill ):
-            query = "INSERT INTO bills (customer_id, bill_date, total_amount) VALUES (? , ? , ?)"
-            bill_data = (c_id, bill_date, total_bill)
+      def bill_values(self, invoice_number, c_id , bill_date,  total_bill ):
+            query = "INSERT INTO bills (invoice_number, customer_id, bill_date, total_amount) VALUES (? , ? , ? , ?)"
+            bill_data = (invoice_number, c_id, bill_date, total_bill)
 
             self.crsr.execute(query, bill_data)
             self.conn.commit() 
@@ -118,6 +134,144 @@ class Database :
             sql = "select * from bill_items"
             self.crsr.execute(sql)
             print(self.crsr.fetchall())
+            
+      def purchaseHistory(self , customer_id=0):
+            query = f'''
+            SELECT
+                  b.invoice_number,
+                  b.bill_id,
+                  b.bill_date,
+                  p.product_name,
+                  bi.quantity,
+                  p.price,
+                  b.total_amount
+            FROM
+                  bills AS b
+            JOIN
+                  bill_items AS bi ON b.bill_id = bi.bill_id
+            JOIN
+                  products AS p ON bi.product_id = p.product_id
+            WHERE
+                  b.customer_id = {customer_id}
+            '''
+
+            # Execute the query
+            self.crsr.execute(query)
+
+            # Fetch the results
+            purchase_history = self.crsr.fetchall()
+            
+
+            # # Print or process the purchase history data as needed
+            # for row in purchase_history:
+            #       bill_id , bill_date, product_name, quantity, price , total = row
+            #       print(f"Bill Id: {bill_id} , Date: {bill_date}, Product: {product_name}, Quantity: {quantity}, Price: {price}")
+            
+            return purchase_history
+                  
+
+            # query = f'''
+            #             SELECT COUNT(*) as count_value 
+            #             FROM customers
+            #             WHERE customer_email = 'shaikjavid8640@gmail.com';
+            #             '''
+                  
+                  
+      def get_customer_product_purchase_data(self):
+            query = '''
+                  SELECT
+                        c.customer_id AS customer_id,
+                        p.product_id AS product_id,
+                        bi.quantity AS quantity
+                  FROM
+                        customers AS c
+                  JOIN
+                        bills AS b ON c.customer_id = b.customer_id
+                  JOIN
+                        bill_items AS bi ON b.bill_id = bi.bill_id
+                  JOIN
+                        products AS p ON bi.product_id = p.product_id
+            '''
+
+            self.crsr.execute(query)
+            result = self.crsr.fetchall()
+
+            # Print or process the retrieved data as needed
+            for row in result:
+                  customer_id, product_id, quantity = row
+                  print(f"Customer ID: {customer_id}, Product ID: {product_id}, Quantity: {quantity}")
+            return result
+      
+      def getProduct(self , id):
+            query = f'''SELECT product_name from products where product_id={id};'''
+            self.crsr.execute(query)
+            return self.crsr.fetchall()
+      
+      def products(self):
+            query = f'''SELECT * from products'''
+            self.crsr.execute(query)
+            return self.crsr.fetchall()
+      
+      def search_product(self , search_query ):
+            query = f'''
+                  SELECT * FROM products
+                  WHERE product_id = ? OR LOWER(category) LIKE LOWER(?) OR LOWER(sub_category) LIKE LOWER(?) OR LOWER(product_name) LIKE LOWER(?)
+            '''
+            search_query = '%' + search_query.lower() + '%'  # Adding wildcards for partial matching in lowercase
+            self.crsr.execute(query, (search_query,search_query, search_query, search_query))
+            product = self.crsr.fetchall()
+            return product
+      
+      def update_product_details(self, pid , new_category, new_subcategory, new_product_name, new_price, new_quantity):
+            query = f'''
+            UPDATE products
+            SET category = ?,
+                  sub_category = ?,
+                  product_name = ?,
+                  price = ?,
+                  quantity = ?
+            WHERE product_id = ?
+            '''
+            self.crsr.execute( query , (new_category, new_subcategory, new_product_name, new_price, new_quantity, pid))
+            self.conn.commit()
+            return None
+      
+      def delete_product(self , pid):
+            query = f'''DELETE FROM products WHERE product_id = ? ;'''
+            try:
+                  self.crsr.execute(query , (pid,))
+                  self.conn.commit()
+                  messagebox.showinfo("Success", "Product deleted Successfully")
+            except sqlite3.Error as e:
+                  messagebox.showerror("Error", f"Error deleting product: {str(e)}") 
+                  
+                  
+      # user management           
+      def users(self):
+            query = f'''SELECT * FROM customers'''
+            self.crsr.execute(query)
+            return self.crsr.fetchall()
+      
+      def delete_user(self , uid):
+            query = f'''DELETE FROM customers WHERE customer_id = ? ;'''
+            try :
+                  self.crsr.execute(query, (uid, ))
+                  self.conn.commit()
+                  messagebox.showinfo("Success", "User deleted Successfully")
+            except sqlite3.Error as e:
+                  messagebox.showerror("Error", f"Error deleting user: {str(e)}")
+                  
+      def search_user(self, search_query):
+            cid = ''
+            if search_query.isdigit():
+                  cid = int(search_query)
+            query = f'''
+                  SELECT * FROM customers
+                  WHERE customer_id = ? OR LOWER(customer_name) LIKE LOWER(?) OR LOWER(customer_email) LIKE LOWER(?) OR LOWER(customer_mobile) LIKE LOWER(?)
+            '''
+            search_query = '%' + search_query.lower() + '%'
+            self.crsr.execute(query , (cid, search_query , search_query, search_query))
+            return self.crsr.fetchall()
 
 class LoginApp(Database):
       
@@ -134,36 +288,33 @@ class LoginApp(Database):
             self.canvas.pack()
 
             
-            header = Label(self.canvas , text="Welcome to Billing Software" ,font=("times new roman",35,"bold"),fg="#677cb6",bg="#b4e2f5" , highlightthickness=0)
+            header = Label(self.canvas , text="Welcome to Billing Software" ,font=("times new roman",35,"bold"),fg="white",bg="orangered" , highlightthickness=0)
             self.canvas.create_window(480 ,20 , anchor="nw", window=header)
             
-            img1 = Image.open("Images/background.jpg").resize((screen_width, screen_height))
+            img1 = Image.open("Images/loginBg.jpg").resize((screen_width, screen_height))
             self.photoimg = ImageTk.PhotoImage(img1)
             
             # Display the background image on the self.canvas
             self.canvas.create_image(0, 0, image=self.photoimg, anchor="nw")
-            self.Main_Frame=Frame(self.login_app,bd=5,relief=GROOVE,bg="skyblue")   #bd=Border,relief=border style
-            self.Main_Frame.place(x=635,y=100,width=250,height=150)
+            self.Login_Frame=Frame(self.login_app,bd=5,relief=GROOVE,bg="orangered")   #bd=Border,relief=border style
+            self.Login_Frame.place(x=635,y=100,width=250,height=150)
 
             #User label
-            self.userlabel = Label(text="Enter Username : " , font=("arial sans-serif",8),fg="black",bg="skyblue")
-            self.canvas.create_window(640,111,anchor="nw",window=self.userlabel,height=20)
+            self.userlabel = Label(self.Login_Frame, text="Enter Username : " , font=("arial sans-serif",8),fg="black",bg="orangered")
+            self.userlabel.grid(row=0, column=0, sticky="w", pady=10)
 
             # user Entry
-            self.entry_username = Entry(self.login_app)
-            self.canvas.create_window(730,111,anchor="nw",window=self.entry_username,height=20)
+            self.entry_username = Entry(self.Login_Frame)
+            self.entry_username.grid(row=0, column=1, pady=10)
 
-            #password label
-            self.passwdlabel = Label(text="Enter Password : " , font=("arial sans-serif",8),fg="black" ,bg="skyblue")
-            self.canvas.create_window(640,150,anchor="nw",window=self.passwdlabel , height=20)
+            self.passwdlabel = Label(self.Login_Frame, text="Enter Password:", font=("arial sans-serif", 8), fg="black", bg="orangered")
+            self.passwdlabel.grid(row=1, column=0, sticky="w", pady=10)
 
-            #password Entry
-            self.entry_password = Entry(self.login_app, show="*" )
-            self.canvas.create_window(730,150,anchor="nw",window=self.entry_password , height=20)
-            
-            #login button
-            self.btn_login = Button(self.login_app, text="Login", command=self.replace_frame,cursor="hand2")
-            self.canvas.create_window(730,200,anchor="nw",window=self.btn_login,width=70)
+            self.entry_password = Entry(self.Login_Frame, show="*")
+            self.entry_password.grid(row=1, column=1, pady=10)
+
+            self.btn_login = Button(self.Login_Frame, text="Login", command=self.replace_frame, cursor="hand2")
+            self.btn_login.grid(row=2, columnspan=2, pady=10)
 
 
       def login(self):
@@ -172,9 +323,10 @@ class LoginApp(Database):
 
             # Perform login verification here
             if username == "admin" and password == "admin":
-                  self.open_billing_app()
+                  self.Login_Frame.place_forget()
+                  self.admin_frame()
             else:
-                  messagebox.showerror("Login Failed", "Invalid username or password")
+                  messagebox.showerror("Login Failed", "Invalid username or password. Please try again!")
 
       def open_billing_app(self):
             self.login_app.destroy()  # Close the login window
@@ -189,64 +341,80 @@ class LoginApp(Database):
             
       def admin_frame(self):
             self.Main_Frame=Frame(self.login_app,bd=5,relief=GROOVE,bg="skyblue")   #bd=Border,relief=border style
-            self.Main_Frame.place(x=635,y=100,width=250,height=300)
-
-            #Category Label
-            self.category_label = Label(text="Enter Category : " , font=("arial sans-serif",8),fg="black",bg="skyblue")
-            self.canvas.create_window(640,110,anchor="nw",window=self.category_label ,height=20)
-
-            # Category Entry
-            self.entry_category = Entry(self.login_app )
-            self.canvas.create_window(750,110,anchor="nw",window=self.entry_category,height=20)
+            self.Main_Frame.place(x=10,y=100,width=self.login_app.winfo_screenwidth())
             
-            # Sub category Label
-            self.sub_category_label = Label(text="Enter Sub Category : " , font=("arial sans-serif",8),fg="black",bg="skyblue")
-            self.canvas.create_window(640,150,anchor="nw",window=self.sub_category_label ,height=20)
+            admin_frame = Frame(self.Main_Frame)
+            admin_frame.pack()
 
-            # Sub category Entry
-            self.entry_sub_category = Entry(self.login_app )
-            self.canvas.create_window(750,150,anchor="nw",window=self.entry_sub_category,height=20)
-            
-            #Product Label
-            self.product_label = Label(text="Enter Product Name : " , font=("arial sans-serif",8),fg="black",bg="skyblue")
-            self.canvas.create_window(640,190,anchor="nw",window=self.product_label,height=20)
+            # Function to display content for different sections
+            def display_section_content(section_name):
+                  # print(section_name)
+                  # Clear previous content (if any)
+                  for widget in admin_frame.winfo_children():
+                        widget.destroy() 
+                        
+                  self.login_app.destroy()
+                  root = Tk()
+                  if section_name == 'Product Management':
+                        ProductManagementApp(root).run()
+                  elif "User Management":
+                        pass
+                  elif section_name == "Pricing and Taxation" :
+                        pass
+                  elif section_name == "Transaction Monitoring" :
+                        pass
+                  elif section_name == "Customer Management" :
+                        pass
+                  elif section_name == "Inventory Management" :
+                        pass
+                  elif section_name == "Reports and Analytics" :
+                        pass
+                  elif section_name == "Settings and Configuration" :
+                        pass
+                  elif section_name == "Security and User Access" :
+                        pass
+                  elif section_name == "Backup and Restore" :
+                        pass
+                  elif section_name == "Notifications and Alerts" :
+                        pass
+                  elif section_name == "Help and Support" :
+                        pass
+                  elif section_name == "Log and Audit Trails" :
+                        pass
+                  elif section_name == "Multi-Store Management":
+                        pass
+                  
 
-            # Product Entry
-            self.entry_product = Entry(self.login_app)
-            self.canvas.create_window(750,190,anchor="nw",window=self.entry_product , height=20)
+            # Create buttons for each admin feature
+            admin_features = [
+                  "User Management",
+                  "Product Management",
+                  "Pricing and Taxation",
+                  "Transaction Monitoring",
+                  "Customer Management",
+                  "Inventory Management",
+                  "Reports and Analytics",
+                  "Settings and Configuration",
+                  "Security and User Access",
+                  "Backup and Restore",
+                  "Notifications and Alerts",
+                  "Help and Support",
+                  "Log and Audit Trails",
+                  "Multi-Store Management"
+            ]
 
-            # Price label
-            self.price_label = Label(text="Enter Price : " , font=("arial sans-serif",8),fg="black" ,bg="skyblue")
-            self.canvas.create_window(640,230,anchor="nw",window=self.price_label , height=20)
-
-            #Price Entry
-            self.entry_price = Entry(self.login_app)
-            self.canvas.create_window(750,230,anchor="nw",window=self.entry_price , height=20)
-            
-            #Quntity Label
-            self.qty_label = Label(text="Enter Quantity : " ,font=("arial sans-serif",8),fg="black" ,bg="skyblue")
-            self.canvas.create_window(640,270,anchor="nw",window=self.qty_label , height=20)
-
-            # Quantity Entry
-            self.entry_qty = Entry(self.login_app)
-            self.canvas.create_window(750,270,anchor="nw",window=self.entry_qty , height=20)
-            
-            
-            # Cancel Button 
-            self.cancel_btn = Button(self.login_app, text="Cancel", command=self.cancel,cursor="hand2")
-            self.canvas.create_window(650,320,anchor="nw",window=self.cancel_btn,width=70)
-            
-            #Save button
-            self.save_product = Button(self.login_app, text="Add Product", command=self.save_products,cursor="hand2")
-            self.canvas.create_window(800,320,anchor="nw",window=self.save_product,width=70)
-            
-            self.btn_login = Button(self.login_app, text="Login", command=self.login,cursor="hand2")
-            self.canvas.create_window(800,350,anchor="nw",window=self.btn_login,width=70)
+            for feature in admin_features:
+                  button = Button(admin_frame, text=feature, command=lambda f=feature: display_section_content(f) , cursor='hand2')
+                  button.pack(side="left", padx=10 )
+               
+      def show_option1(self):
+            print("Option")
+            pass
 
             
-      def replace_frame(self):
-            self.Main_Frame.place_forget()
-            self.admin_frame()  
+      def replace_frame(self): 
+            self.login()
+            # self.Login_Frame.place_forget()
       
       def cancel(self):
             self.entry_category.delete(0,END) 
@@ -254,7 +422,6 @@ class LoginApp(Database):
             self.entry_product.delete(0,END)
             self.entry_price.delete(0,END)
             self.entry_qty.delete(0,END)
-            self.textarea.delete()
             
             
       def save_products(self):
@@ -289,14 +456,15 @@ class Bill_App(LoginApp, Database):
       db = Database(conn, crsr )
       db.product()
       db.customer()
-      
       db.billitems()
       db.billtable()
-      db.earasedata()
+      # db.earasedata()
+      # db.purschseHistory()
+      # db.get_customer_product_purchase_data()
       # db.print_customer()
       # db.printbill()
       # db.printbillitmes()
-      
+      db.products()
       # db.product_values('Clothing', 'Shirt','Denim',2000 ,2)
       # db.product_values('Mobiles' , 'OnePlus', 'Nord', 30000 , 1)
       # db.product_values('Mobiles', 'OnePlus', 'One10T' , 90000 , 3)
@@ -316,10 +484,10 @@ class Bill_App(LoginApp, Database):
             self.Cust_Email=StringVar()
             self.Search_Bill=StringVar()
             self.Product=StringVar()
-            self.Prices=IntVar()
+            self.Price=IntVar()
             self.Quantity=IntVar()
             self.Sub_Total=StringVar()
-            self.Tax=StringVar()
+            self.Tax=IntVar()
             self.Total=StringVar()
             self.flag = 0 
             self.total_qty = 0
@@ -330,6 +498,11 @@ class Bill_App(LoginApp, Database):
             rows =  self.crsr.fetchall()
 
             self.Category=["Select Option"]+ [row[0] for row in rows]
+            
+            
+            # Validation functions
+            phone_validation = root.register(self.validate_phone)
+            email_validation = root.register(self.validate_email)
 
 #..........................................................................................................................................
 
@@ -337,7 +510,6 @@ class Bill_App(LoginApp, Database):
 
 
 #image 1
-            self.products = []
             img=Image.open("Images/image1.jpg")
             img=img.resize((500,130)) #it convert low level img to high level img
             self.photoimg=ImageTk.PhotoImage(img)
@@ -369,31 +541,38 @@ class Bill_App(LoginApp, Database):
             Main_Frame=Frame(self.root,bd=5,relief=GROOVE,bg="white")   #bd=Border,relief=border style
             Main_Frame.place(x=0,y=175,width=1530,height=630)           #to underline text
             
-        #Customer label frame
+            #Customer label frame
             Cust_Frame=LabelFrame(Main_Frame,text="Customer",font=("times new roman",12,"bold"),bg="white",fg="red")
             Cust_Frame.place(x=10,y=5,width=350,height=150)
 
-            #Mobile Number
-
+            #Name
             self.lblCustName=Label(Cust_Frame,font=("arial",12,"bold"),bg="white",text="Customer Name",bd=4)
             self.lblCustName.grid(row=0,column=0,sticky=W,padx=5,pady=2)
 
             self.txtCusName=ttk.Entry(Cust_Frame,textvariable=self.Cust_Name,font=("arial",10,"bold"),width=24)
             self.txtCusName.grid(row=0,column=1,sticky=W,padx=5,pady=2)
             
+            
+            #Mobile Number
             self.lbl_mob=Label(Cust_Frame,text="Mobile Number",font=("times new roman",12,"bold"),bg="white")
             self.lbl_mob.grid(row=1,column=0,sticky=W,padx=5,pady=2) #west
 
-            self.entry_mob=ttk.Entry(Cust_Frame,textvariable=self.Cust_Phone,font=("times new roman",10,"bold"),width=24)                                                  #if we want to use any variable we use self
+            self.entry_mob=ttk.Entry(Cust_Frame,textvariable=self.Cust_Phone,font=("times new roman",10,"bold"),width=24, validate="key", validatecommand=(phone_validation, '%P'))                                                  #if we want to use any variable we use self
             self.entry_mob.grid(row=1,column=1)
 
+            #Email 
             self.lblEmail=Label(Cust_Frame,font=("arial",12,"bold"),bg="white",text="Email",bd=4)
             self.lblEmail.grid(row=2,column=0,sticky=W,padx=5,pady=2)
 
-            self.txtEmail=ttk.Entry(Cust_Frame,textvariable=self.Cust_Email,font=('arial',10,'bold'),width=24)
+            self.txtEmail=ttk.Entry(Cust_Frame,textvariable=self.Cust_Email,font=('arial',10,'bold'),width=24, validate="key", validatecommand=(email_validation, '%P'))
             self.txtEmail.grid(row=2,column=1,sticky=W,padx=5,pady=2)
             
-        #Product label frame
+            # Bind callback functions to the entry fields
+            self.txtCusName.bind('<KeyRelease>', self.update_textarea)
+            self.entry_mob.bind('<KeyRelease>', self.update_textarea)
+            self.txtEmail.bind('<KeyRelease>', self.update_textarea)
+            
+            #Product label frame
             Product_Frame=LabelFrame(Main_Frame,text="Product",font=("times new roman",12,"bold"),bg="white",fg="red")
             Product_Frame.place(x=370,y=5,width=640,height=150)
 
@@ -468,8 +647,8 @@ class Bill_App(LoginApp, Database):
             self.lblBill.grid(row=0,column=0,sticky=W,padx=1)
 
             #Entry Click
-            self.tax_Entry_Search=ttk.Entry(Search_Frame,textvariable=self.Search_Bill,font=("arial",10,"bold"),width=18)
-            self.tax_Entry_Search.grid(row=0,column=1,sticky=W,padx=2)
+            self.bill_Entry_Search=ttk.Entry(Search_Frame,textvariable=self.Search_Bill,font=("arial",10,"bold"),width=18)
+            self.bill_Entry_Search.grid(row=0,column=1,sticky=W,padx=2)
 
             #Search Button
             self.BtnSearch=Button(Search_Frame,command=self.find_bill,text="Search",font=("arial",10,"bold"),bg="orangered",fg="white",width=13,cursor="hand2")
@@ -504,8 +683,8 @@ class Bill_App(LoginApp, Database):
             self.lbl_tax=Label(Bottom_Frame,font=("arial",12,"bold"),bg="white",text="Gov Tax",bd=4)
             self.lbl_tax.grid(row=1,column=0,sticky=W,padx=5,pady=2)
 
-            self.txt_tax=ttk.Entry(Bottom_Frame,font=("arial",12,"bold"),width=24)
-            self.txt_tax.grid(row=1,column=1,sticky=W,padx=5,pady=2)
+            self.tax_entry=ttk.Entry(Bottom_Frame,font=("arial",12,"bold"),width=24)
+            self.tax_entry.grid(row=1,column=1,sticky=W,padx=5,pady=2)
 
 
         #Total
@@ -514,13 +693,10 @@ class Bill_App(LoginApp, Database):
 
             self.txtAmountTotal=ttk.Entry(Bottom_Frame,font=("arial",12,"bold"),width=24)
             self.txtAmountTotal.grid(row=2,column=1,sticky=W,padx=5,pady=2)
-
-            Btn_Frame = Frame(Bottom_Frame, bd=20, bg="white")
-            Btn_Frame.place(x=620, y=0)
                         
             #Button Frame
             Btn_Frame=Frame(Bottom_Frame,bd=20,bg="white")
-            Btn_Frame.place(x=620,y=0)
+            Btn_Frame.place(x=560,y=0)
 
             self.BtnAddToCart=Button(Btn_Frame,command=self.AddItem,height=2,text="Add To Cart",font=("arial",12,"bold"),bg="orangered",fg="white",width=15,cursor="hand2")
             self.BtnAddToCart.grid(row=0,column=0)
@@ -543,7 +719,7 @@ class Bill_App(LoginApp, Database):
             self.BtnExit.grid(row=0,column=5)
 #...........................................................................................................................................
             self.welcome(self.Bill_NO.get() ,self.Cust_Name.get() , self.Cust_Phone.get() , self.Cust_Email.get() ) # for welcome fun (page) 
-            self.prices =[] #To add items
+            self.total_price = 0 #To add items
             self.products = {}  #To add prducts into the cart
             
       def welcome(self , bill_no , cust_num , phone_num , email):
@@ -559,7 +735,27 @@ class Bill_App(LoginApp, Database):
             self.textarea.config(state=DISABLED)
       
       # Product window 
-      
+      def update_textarea(self, event):
+            # Clear the existing content in the Textarea
+            self.textarea.config(state=NORMAL)
+            self.textarea.delete(1.0, END)
+
+            # Retrieve values from entry fields
+            bill_no = self.Bill_NO.get()
+            cust_name = self.Cust_Name.get()
+            phone_num = self.Cust_Phone.get()
+            email = self.Cust_Email.get()
+            
+            # Update the Textarea with the new values
+            self.textarea.insert(END, f"\t Welcome To Our Store")
+            self.textarea.insert(END,f"\n Bill Number: {bill_no}")
+            self.textarea.insert(END, f"\n Customer Name: {cust_name}")
+            self.textarea.insert(END, f"\n Phone Number: {phone_num}")
+            self.textarea.insert(END, f"\n Email: {email}")
+            self.textarea.insert(END, "\n===================================")
+            self.textarea.insert(END, f"\n Products\t\tQTY\t\tPrice")
+            self.textarea.insert(END, "\n===================================\n")
+            self.textarea.config(state=DISABLED)
       
       def replace_row(self , search_text):
       # Find the index of the search_text in the Text widget
@@ -579,7 +775,21 @@ class Bill_App(LoginApp, Database):
                   # Insert the replacement_text at the start of the row
                   return start_row_index
             
-       
+      #Validation functions
+            
+      def validate_phone(self, new_value):
+            return new_value.isdigit() or new_value == ""
+
+
+            
+
+
+      def validate_email(self, new_value):
+            # A simple email validation check
+            return re.match(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$', new_value) is not None or new_value == ""
+
+
+            
       def AddItem(self):
             self.tax_input=StringVar()
             Tax=1
@@ -595,43 +805,61 @@ class Bill_App(LoginApp, Database):
                   product = self.Product.get()
                   flag = 0
                   if product in self.products:
+                        self.total_price -= self.price*self.products[product]
                         self.products[product]+= self.qty 
+                        
                         flag = 1
                   else :
                         self.products[product] = self.qty
                   
                   
-                  self.qty = self.products[product]
-                  self.total = self.price*self.qty
-                  self.prices.append(self.total)
+                  qty = self.products[product]
+                  self.total = self.price*qty
+                  self.total_price += self.total
                   
                   if flag :
                         idx = self.replace_row(product)
-                        self.textarea.insert(idx, f" {self.Product.get()}\t\t{self.qty}\t\t{self.total}")
+                        self.textarea.insert(idx, f" {self.Product.get()}\t\t{qty}\t\t{self.total}")
                   else :
-                        self.textarea.insert(END, f"\n {self.Product.get()}\t\t{self.qty}\t\t{self.total}")
+                        self.textarea.insert(END, f"\n {self.Product.get()}\t\t{qty}\t\t{self.total}")
                   
                   
                   self.EntrySubTotal.delete(0, END)
-                  self.EntrySubTotal.insert(END, str('RS.%.2f'%(sum(self.prices))))
+                  self.EntrySubTotal.insert(END, str('RS.%.2f'%((self.total_price))))
                   
-                  self.txt_tax.delete(0, END)
-                  self.txt_tax.insert(END, str('RS.%.2f'%((((sum(self.prices)) - (self.Prices.get()))*Tax)/100)))
+                  self.tax_entry.delete(0, END)
+                  self.tax_entry.insert(END, str('RS.%.2f'%(((((self.total_price)) - (self.Price.get()))*Tax)/100)))
                   
                   self.txtAmountTotal.delete(0,END)
-                  self.txtAmountTotal.insert(END, str('RS.%.2f'%(((sum(self.prices)) + ((((sum(self.prices)) - (self.Prices.get()))*Tax)/100)))))
+                  self.txtAmountTotal.insert(END, str('RS.%.2f'%((((self.total_price)) + (((((self.total_price)) - (self.Price.get()))*Tax)/100)))))
                   
             
             self.textarea.config(state=DISABLED)
             self.idx = self.textarea.index("end-1c linestart")
             #print(self.idx)
+            
+            
       def check_printer_connection():
             printer_name = win32print.GetDefaultPrinter()
             printer_info = win32print.GetPrinter(printer_name, 2)
             status = printer_info['Status']
             return status == win32print.PRINTER_STATUS_READY
+      
             
       def gen_bill(self):
+            
+            def generate_invoice_number():
+            # Get the current date in the format YYYYMMDD
+                  current_date = datetime.now().strftime("%Y%m%d")
+                  
+                  # Generate a unique identifier (you can use a random number generator or any other method)
+                  unique_identifier = random.randint(100000, 999999)  # Generates a random 6-digit number
+                  
+                  # Combine the prefix, date, and unique identifier
+                  invoice_number = f"INV-{current_date}-{unique_identifier}"
+                  
+                  return invoice_number
+      
             if self.Cust_Name.get() != "" and self.Cust_Phone.get() != "":
                   self.textarea.config(state=NORMAL)
                   if self.Product.get()=="" or self.Cust_Name.get() == "" or self.Cust_Phone.get() == "" :
@@ -640,7 +868,7 @@ class Bill_App(LoginApp, Database):
                         
                         self.textarea.insert(END,f"\n=================================")
                         self.textarea.insert(END,f"\n Sub Amount:\t\t\t{self.EntrySubTotal.get()}")
-                        self.textarea.insert(END,f"\n Tax Amount:\t\t\t{self.txt_tax.get()}")
+                        self.textarea.insert(END,f"\n Tax Amount:\t\t\t{self.tax_entry.get()}")
                         self.textarea.insert(END,f"\n Total Amount:\t\t\t{self.txtAmountTotal.get()}")
                         self.textarea.insert(END,f"\n================================")
                         
@@ -657,10 +885,34 @@ class Bill_App(LoginApp, Database):
                               if result:
                                     p_id = result[0][0]
                                     p_id_list.append(p_id)
-            
-                        c_id = self.db.customer_values(self.txtCusName.get() ,self.txtEmail.get(), customer_mobile)
+                                    
+                        customer_name = self.txtCusName.get()
+                        customer_email = self.txtEmail.get()
                         
-                        bill_id = self.db.bill_values(c_id , date.today() , total_bill)
+                        query = f'''
+                        SELECT COUNT(*) as count_value 
+                        FROM customers
+                        WHERE customer_email = '{customer_email}' OR customer_mobile = '{customer_mobile}';
+                        '''
+                        
+                        self.crsr.execute(query)
+                        
+                        invoice_number = generate_invoice_number()
+                        if self.crsr.fetchone()[0]:
+                              query = f'''
+                              SELECT customer_id FROM customers  
+                              WHERE customer_email = '{customer_email}' OR customer_mobile = '{customer_mobile}';
+                              '''
+                              
+                              self.crsr.execute(query)
+                              c_id = self.crsr.fetchone()[0]
+                              
+                              bill_id = self.db.bill_values(invoice_number, c_id , date.today() , total_bill)
+                              
+                        else :
+                              c_id = self.db.customer_values(customer_name ,customer_email, customer_mobile)
+                              
+                              bill_id = self.db.bill_values(invoice_number,  c_id , date.today() , total_bill)
                         
                         for p_id in p_id_list:
                               self.db.bill_items_entry(bill_id ,p_id , self.qty)
@@ -691,7 +943,7 @@ class Bill_App(LoginApp, Database):
                   messagebox.showinfo("Print bill" , "Bill not printed")
 
       def find_bill(self):
-            bill_no = self.tax_Entry_Search.get()
+            bill_no = self.bill_Entry_Search.get()
             if bill_no == "" :
                   messagebox.showerror("Bill id", "Enter bill number")
             else:
@@ -776,15 +1028,15 @@ class Bill_App(LoginApp, Database):
             self.textarea.config(state=NORMAL)
             self.textarea.delete(1.0,END)
             self.welcome(self.Bill_NO.get() ,self.Cust_Name.get() , self.Cust_Phone.get() , self.Cust_Email.get() )
-            self.textarea.delete(2.0,3.0)
-            self.Bill_NO.set(random.randint(1,1000))
-            self.textarea.insert(2.0,f" Bill Number: {self.Bill_NO.get()}\n")
+            # self.textarea.delete(2.0,3.0)
+            # self.Bill_NO.set(random.randint(1,1000))
+            # self.textarea.insert(2.0,f" Bill Number: {self.Bill_NO.get()}\n")
             self.textarea.config(state=DISABLED)
-            self.txt_tax.delete(0, END)
+            self.tax_entry.delete(0, END)
             self.EntrySubTotal.delete(0,END)
             self.txtAmountTotal.delete(0,END)
             
-            self.prices.clear()
+            self.total_price = 0
             self.products.clear()
       
       def clear_from_subtotal(self):
@@ -799,11 +1051,206 @@ class Bill_App(LoginApp, Database):
             
 #........................................................................................................................................
 
+class ProductRecommendation(Bill_App):
+      """Product recommendation based on purchasing behavior"""
+      def __init__(self):
+            db = Bill_App.db 
+            purchase_history = db.get_customer_product_purchase_data()
+
+            # Create a DataFrame from the purchase history data
+            df = pd.DataFrame(purchase_history, columns=['customer_id', 'product_id', 'quantity'])
+            
+            df.dropna()
+            # print("Head --->\n" ,df.head())
+            
+            # print(df.shape)
+            # Create a user-item matrix using Pandas pivot_table
+            user_item_matrix = df.pivot_table(index='customer_id', columns='product_id', values='quantity', fill_value=0)
+            
+            # print(user_item_matrix.head())
+            
+            X = user_item_matrix.T
+            # print(X.head())
+            
+            SVD = TruncatedSVD(n_components=5)
+            decomposed_matrix = SVD.fit_transform(X)
+            # print(decomposed_matrix.shape)
+            
+            correlation_matrix = np.corrcoef(decomposed_matrix)
+            # print(correlation_matrix.shape)
+            # Reset the index to ensure the user_id becomes a column
+            i = X.index[0]
+
+            product_names = list(X.index)
+            product_ID = product_names.index(i)
+            print(product_ID)
+            
+            correlation_product_ID = correlation_matrix[product_ID]
+            print(correlation_product_ID.shape)
+            
+
+            Recommend = list(X.index[correlation_product_ID > 0.90])
+
+            # Removes the item already bought by the customer
+            Recommend.remove(i) 
+
+            print(Recommend[0:])
+            for id in Recommend:
+                  results = db.getProduct(id)
+                  print(results)
+
+      # Print the TensorFlow user-item matrix
+      # print(user_item_matrix_tf)
+      
+      
+class ProductManagementApp(Bill_App):
+    
+    def __init__(self, root):
+        self.db = Bill_App.db
+        self.root = root
+        self.root.title("Product Management")
+        self.root.geometry("1530x800+0+0")
+
+        # Product List
+        self.product_list = ttk.Treeview(self.root, columns=("Category", "Subcategory", "Name", "Price", "Quantity"))
+        self.product_list.heading("#1", text="Category")
+        self.product_list.heading("#2", text="Subcategory")
+        self.product_list.heading("#3", text="Name")
+        self.product_list.heading("#4", text="Price")
+        self.product_list.heading("#5", text="Quantity")
+        
+        # Add a scrollbar for the Treeview
+        tree_scroll = ttk.Scrollbar(self.root, orient="vertical", command=self.product_list.yview)
+        tree_scroll.pack(side="right", fill="y")
+        self.product_list.configure(yscrollcommand=tree_scroll.set)
+        
+        self.insert_sample_products()
+        
+        self.product_list.pack(pady=20)
+
+        # Search and Filter
+        self.filter_frame = ttk.LabelFrame(self.root, text="Search and Filter")
+        self.filter_frame.pack(pady=10)
+
+        self.search_label = ttk.Label(self.filter_frame, text="Search:")
+        self.search_label.grid(row=0, column=0)
+
+        self.search_entry = ttk.Entry(self.filter_frame)
+        self.search_entry.grid(row=0, column=1)
+
+        self.filter_button = ttk.Button(self.filter_frame, text="Filter", command=self.filter_products)
+        self.filter_button.grid(row=0, column=2)
+
+        # Add New Product
+        self.add_product_frame = ttk.LabelFrame(self.root, text="Add New Product")
+        self.add_product_frame.pack(pady=10)
+
+        self.category_label = ttk.Label(self.add_product_frame, text="Category:")
+        self.category_label.grid(row=0, column=0)
+
+        self.category_entry = ttk.Entry(self.add_product_frame)
+        self.category_entry.grid(row=0, column=1)
+
+        self.subcategory_label = ttk.Label(self.add_product_frame, text="Subcategory:")
+        self.subcategory_label.grid(row=1, column=0)
+
+        self.subcategory_entry = ttk.Entry(self.add_product_frame)
+        self.subcategory_entry.grid(row=1, column=1)
+
+        self.name_label = ttk.Label(self.add_product_frame, text="Name:")
+        self.name_label.grid(row=2, column=0)
+
+        self.name_entry = ttk.Entry(self.add_product_frame)
+        self.name_entry.grid(row=2, column=1)
+
+        self.price_label = ttk.Label(self.add_product_frame, text="Price:")
+        self.price_label.grid(row=3, column=0)
+
+        self.price_entry = ttk.Entry(self.add_product_frame)
+        self.price_entry.grid(row=3, column=1)
+
+        self.quantity_label = ttk.Label(self.add_product_frame, text="Quantity:")
+        self.quantity_label.grid(row=4, column=0)
+
+        self.quantity_entry = ttk.Entry(self.add_product_frame)
+        self.quantity_entry.grid(row=4, column=1)
+
+        self.add_product_button = ttk.Button(self.add_product_frame, text="Add Product", command=self.add_product)
+        self.add_product_button.grid(row=5, columnspan=2)
+
+        # Edit and Delete Product
+        self.edit_delete_frame = ttk.LabelFrame(self.root, text="Edit and Delete Product")
+        self.edit_delete_frame.pack(pady=10)
+
+        self.edit_button = ttk.Button(self.edit_delete_frame, text="Edit Product", command=self.edit_product)
+        self.edit_button.grid(row=0, column=0)
+
+        self.delete_button = ttk.Button(self.edit_delete_frame, text="Delete Product", command=self.delete_product)
+        self.delete_button.grid(row=0, column=1)
+        
+    def insert_sample_products(self):
+        products = self.db.products()
+
+        for i, product in enumerate(products, start=1):
+            self.product_list.insert("", "end", iid=i, values=product[1:])
+
+
+    def filter_products(self):
+        # Get the user's search query
+        search_query = self.search_entry.get().strip().lower()
+        
+        # Clear the current product list
+        for item in self.product_list.get_children():
+            self.product_list.delete(item)
+
+        # Fetch products from your database or data source
+        products = self.db.search_product(search_query)  # Implement this method
+
+        # Filter and display products that match the search query
+        for product in products:
+            category, subcategory, name, price, quantity = product[1:]
+
+            if search_query in name.lower() or search_query in category.lower() or search_query in subcategory.lower():
+                self.product_list.insert("", "end", values=(category, subcategory, name, price, quantity))
+    
+    def add_product(self):
+        category = self.category_entry.get().strip().capitalize()
+        sub_category = self.subcategory_entry.get().strip().capitalize()
+        product = self.name_entry.get().strip().capitalize()
+        price = self.price_entry.get()
+        qty = self.quantity_entry.get()
+        if not all([category, sub_category, product]):
+            messagebox.showerror('Error', 'All fields are required')
+        elif price =="" or qty == "":
+            messagebox.showerror("Error","Please Enter price or qty")
+        
+        self.db.product_values(category , sub_category, product , price , qty)
+        messagebox.showinfo("Success", "Product Added Successfully")
+        
+
+    def edit_product(self):
+        # Implement editing a product
+        selected_item = self.product_list.focus()
+        if selected_item:
+            # Retrieve data from the selected row
+            data = self.product_list.item(selected_item, 'values')
+            print(data)
+
+    def delete_product(self):
+        # Implement deleting a product
+        pass
+    
+    def run(self):
+        self.root.mainloop()
+        
+    def close(self):
+        self.root.destroy()
 
 if __name__=='__main__':
       root  = Tk()
       Bill_App(root)
-      root.mainloop()
+      Bill_App.clear()
+      # root.mainloop()
       # LoginApp(login_app)
        
                 
